@@ -230,17 +230,9 @@ class InitTask(Task):
 
         try:
             Command('htrace', args, cwd=bench_path).run()
+            self.copy_inputs(benchmark, 'all')
+            self.copy_inputs(benchmark, 'train')
 
-            inputs = os.path.join(benchmark.local_path,
-                                  'Fibon','data', 'train', 'input')
-
-            dst = benchmark.local_path
-            if os.path.exists(inputs):
-                for input in os.listdir(inputs):
-                    src = os.path.join(inputs, input)
-                    Log.debug('Copying input %s to %s', src, dst)
-                    shutil.copy(src, dst)
-                
         except CommandError as e:
             self.failed = True
             self.stdout = e.stdout
@@ -248,6 +240,19 @@ class InitTask(Task):
 
         if self.failed:
             raise HtraceError('Failed to init benchmark '+self.benchmark.name)
+
+    def copy_inputs(self, benchmark, input_size):
+        inputs = os.path.join(benchmark.local_path,
+                              'Fibon','data', input_size, 'input')
+
+        dst = benchmark.local_path
+        if os.path.exists(inputs):
+            for input in os.listdir(inputs):
+                src = os.path.join(inputs, input)
+                Log.debug('Copying input %s to %s', src, dst)
+                shutil.copy(src, dst)
+
+
 
 def init(cfg, opts):
     benchmarks = cfg.benchmarks
