@@ -12,16 +12,21 @@ import sys
 import shutil
 import tempfile
 import threading
+import traceback
 import time
 import queue
 
 Log = logging.getLogger('htrace-fibon')
 
 class Config:
-    def __init__(self, site_cfg):
+    def __init__(self, site_cfg, extra_cfg):
         cfg = Config.getparser()
         cfg.read_file(open(site_cfg))
         self.config = cfg
+
+        extra = Config.getparser()
+        extra.read_file(open(extra_cfg))
+        self.extra_config = extra
 
     @property
     def benchmarks(self):
@@ -34,7 +39,8 @@ class Config:
                                             sect_d['build'],
                                             sect_d['run'],
                                             sect_d['stdin'],
-                                            self.fibon_benchmarks_path))
+                                            self.fibon_benchmarks_path,
+                                            self.extra_config,))
         return benchmarks
 
     @property
@@ -51,13 +57,18 @@ class Config:
             interpolation=configparser.ExtendedInterpolation())   
 
 class Benchmark:
-    def __init__(self, name, configure, build, run, stdin, fibon_root):
+    def __init__(self, name, configure, build, run, stdin, fibon_root, extra_config):
         self.name = name
         self.configure = configure
         self.build = build
         self.run = run
         self.local_path = name + '-htrace'
         self.stdin = stdin.strip()
+
+        self.extra_files = extra_config.get(name, 'extra-files', fallback=[])
+        if self.extra_files:
+            self.extra_files = self.extra_files.split()
+        self.extra_libs  = extra_config.get(name, 'extra-libs',  fallback=None)
 
         self.fibon_path = None
         for group in os.listdir(fibon_root):
@@ -161,14 +172,19 @@ class Command:
             raise CommandError(self, ret, stdoutf, stderrf)
         return CommandResult(stdoutf, stderrf)
 
+    def __str__(self):
+        return "{0} {1}".format(self.exe, " ".join(self.args))
+
 def run_tasks(opts, tasks):
-    failures = []
     Pool(opts.jobs).run(tasks)
-    failures = [t for t in tasks if  t.failed]
+    failures = [t for t in tasks if     t.failed]
+    passes   = [t for t in tasks if not t.failed]
     if len(failures) > 0:
         Log.error('Failed on %d of %d benchmarks: %s',
                   len(failures), len(tasks), failures)
-
+    if len(passes) > 0:
+        Log.info('Passed on %d of %d benchmarks: %s',
+                 len(passes), len(tasks), passes)
 class Task:
     def __init__(self,opts, name):
         self.name = name
@@ -185,7 +201,7 @@ class Task:
         try:
             self.impl()
         except HtraceError as e:
-            Log.error("Failed running task: %s", self.name)
+            Log.error("Failed running task %s: %s", self.name, e.msg)
             self.failed = True
             self.exn    = e
             now         = str(datetime.datetime.now()) + '\n'
@@ -195,10 +211,12 @@ class Task:
                 with open(os.path.join(logdir, self.name+'.stdout'), 'w') as f:
                     f.write(now)
                     f.write(self.stdout.read())
-            if self.stdout:
+            if self.stderr:
                 with open(os.path.join(logdir, self.name+'.stderr'), 'w') as f:
                     f.write(now)
                     f.write(self.stderr.read())
+            with open(os.path.join(logdir, self.name+'.exn'), 'w') as f:
+                traceback.print_exc(file=f)
 
             if self.opts.stop_on_error:
                 raise
@@ -228,10 +246,15 @@ class InitTask(Task):
         args.append("--run-args={0}".format(run_args))
         args.extend(['--copytree', 'Fibon'])
 
+        if benchmark.extra_libs:
+            args.append("--extra-libs={0}".format(benchmark.extra_libs))
+
+        cmd = Command('htrace', args, cwd=bench_path)
         try:
-            Command('htrace', args, cwd=bench_path).run()
+            cmd.run()
             self.copy_inputs(benchmark, 'all')
             self.copy_inputs(benchmark, 'train')
+            self.copy_extra(benchmark)
 
         except CommandError as e:
             self.failed = True
@@ -239,7 +262,8 @@ class InitTask(Task):
             self.stderr = e.stderr
 
         if self.failed:
-            raise HtraceError('Failed to init benchmark '+self.benchmark.name)
+            raise HtraceError('Failed running external command '+str(cmd)+
+                              ' while trying to init benchmark '+self.benchmark.name)
 
     def copy_inputs(self, benchmark, input_size):
         inputs = os.path.join(benchmark.local_path,
@@ -252,7 +276,18 @@ class InitTask(Task):
                 Log.debug('Copying input %s to %s', src, dst)
                 shutil.copy(src, dst)
 
+    def copy_extra(self, benchmark):
+        Log.debug('copying extras')
+        if not benchmark.extra_files:
+            return
+        extras = map(lambda x: os.path.join(benchmark.fibon_path, x),
+                     benchmark.extra_files)
+        dst = benchmark.local_path
 
+        for src in extras:
+            if not os.path.exists(src):
+                raise HtraceError('Extra file '+src+' does not exist')
+            shutil.copy(src, dst)
 
 def init(cfg, opts):
     benchmarks = cfg.benchmarks
@@ -503,7 +538,7 @@ def main(args):
         'ini'     : lambda : ini(cfg, opts),
         }
     opts = parse_args(args, actions)
-    cfg  = Config(opts.config)
+    cfg  = Config(opts.config, 'htrace.extra.cfg')
 
     # configure logging
     lvl = logging.INFO
