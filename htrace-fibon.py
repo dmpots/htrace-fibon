@@ -65,10 +65,14 @@ class Benchmark:
         self.local_path = name + '-htrace'
         self.stdin = stdin.strip()
 
+        # read the "extras"
+        self.extra_libs  = extra_config.get(name, 'extra-libs',  fallback=None)
         self.extra_files = extra_config.get(name, 'extra-files', fallback=[])
         if self.extra_files:
             self.extra_files = self.extra_files.split()
-        self.extra_libs  = extra_config.get(name, 'extra-libs',  fallback=None)
+        self.extra_ll_files = extra_config.get(name, 'extra-ll-files', fallback=[])
+        if self.extra_ll_files:
+            self.extra_ll_files = self.extra_ll_files.split()
 
         self.fibon_path = None
         for group in os.listdir(fibon_root):
@@ -248,6 +252,8 @@ class InitTask(Task):
 
         if benchmark.extra_libs:
             args.append("--extra-libs={0}".format(benchmark.extra_libs))
+        if benchmark.extra_ll_files:
+            args.append("--extra-ll-files={0}".format(' '.join(benchmark.extra_ll_files)))
 
         cmd = Command('htrace', args, cwd=bench_path)
         try:
@@ -278,16 +284,30 @@ class InitTask(Task):
 
     def copy_extra(self, benchmark):
         Log.debug('copying extras')
-        if not benchmark.extra_files:
-            return
-        extras = map(lambda x: os.path.join(benchmark.fibon_path, x),
-                     benchmark.extra_files)
-        dst = benchmark.local_path
+        def do_copy(base_path, extra_files, dest_fun):
+            extras = map(lambda x: os.path.join(base_path, x), extra_files)
+            for src in extras:
+                if not os.path.exists(src):
+                    raise HtraceError('Extra file '+src+' does not exist')
+                dst = dest_fun(src)
+                Log.debug('Copying extra %s => %s', src, dst)
+                shutil.copy(src, dst)
 
-        for src in extras:
-            if not os.path.exists(src):
-                raise HtraceError('Extra file '+src+' does not exist')
-            shutil.copy(src, dst)
+        def local_ll_name(ll):
+            """Local path to ll file, must match what the htrace script produces"""
+            dirs = ll.split('/')
+            while dirs.count('.'):
+                dirs.remove('.')
+            while dirs.count('..'):
+                dirs.remove('..')
+            return (os.path.join(benchmark.local_path,'bitcode', '_'.join(dirs)))
+
+        if benchmark.extra_files:
+            do_copy(benchmark.fibon_path, benchmark.extra_files,
+                    lambda x: benchmark.local_path)
+        if benchmark.extra_ll_files:
+            do_copy(os.curdir, benchmark.extra_ll_files,
+                    local_ll_name)
 
 def init(cfg, opts):
     benchmarks = cfg.benchmarks
