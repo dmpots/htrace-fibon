@@ -522,13 +522,13 @@ def parse_args(args, actions):
     parser.add_argument('-r', '--reuse', metavar='DIR',
                         help='Reuse directory for installing into fibon/run')
     
-    parser.add_argument('-t', '--tune', metavar='TUNE',
+    parser.add_argument('-t', '--tune', metavar='Tune',
                         choices=['Base', 'Peak'], default='*',
                         help='Tune level of target install directory')
     
-    parser.add_argument('-s', '--size', metavar='SIZE',
+    parser.add_argument('-s', '--size', metavar='Size',
                         choices=['Test', 'Train', 'Ref'], default='*',
-                        help='Tune level of target install directory')
+                        help='Size setting of target install directory')
 
     parser.add_argument('--update-ini', default=False, action='store_true',
                         help='Update the ini config file in place')
