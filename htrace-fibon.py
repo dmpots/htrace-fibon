@@ -19,20 +19,58 @@ import queue
 Log = logging.getLogger('htrace-fibon')
 
 class Config:
-    def __init__(self, site_cfg, extra_cfg):
+    def __init__(self, site_cfg, local_cfg, extra_cfg):
         cfg = Config.getparser()
         cfg.read_file(open(site_cfg))
+        cfg.read_file(open(local_cfg))
         self.config = cfg
 
         extra = Config.getparser()
+        extra.read_file(open(site_cfg))
         extra.read_file(open(extra_cfg))
         self.extra_config = extra
+
+        self.known_benchmarks = set([
+            "Agum",
+            "BinaryTrees",
+            "Blur",
+            "Bzlib",
+            "Chameneos",
+            "Cpsa",
+            "Crypto",
+            "Dotp",
+            "FFT2d",
+            "FFT3d",
+            "Fannkuch",
+            "Fgl",
+            "Fst",
+            "Funsat",
+            "Gf",
+            "HaLeX",
+            "Happy",
+            "Hgalib",
+            "Laplace",
+            "MMult",
+            "Mandelbrot",
+            "Nbody",
+            "Palindromes",
+            "Pappy",
+            "Pidigits",
+            "Qsort",
+            "QuickCheck",
+            "QuickHull",
+            "Regex",
+            "Simgi",
+            "SpectralNorm",
+            "TernaryTrees",
+            "Xsact",
+            ])
 
     @property
     def benchmarks(self):
         benchmarks = []
         for sect in self.config.sections():
-            if sect != "fibon":
+            if sect in self.known_benchmarks:
                 sect_d = self.config[sect]
                 benchmarks.append(Benchmark(sect,
                                             sect_d['configure'],
@@ -73,6 +111,8 @@ class Benchmark:
         self.extra_ll_files = extra_config.get(name, 'extra-ll-files', fallback=[])
         if self.extra_ll_files:
             self.extra_ll_files = self.extra_ll_files.split()
+        self.extra_opt_pre_link = extra_config.get(name, 'extra-opt-pre-link',
+                                                   fallback=None)
 
         self.fibon_path = None
         for group in os.listdir(fibon_root):
@@ -254,6 +294,8 @@ class InitTask(Task):
             args.append("--extra-libs={0}".format(benchmark.extra_libs))
         if benchmark.extra_ll_files:
             args.append("--extra-ll-files={0}".format(' '.join(benchmark.extra_ll_files)))
+        if benchmark.extra_opt_pre_link:
+            args.append("--extra-opt-pre-link={0}".format(benchmark.extra_opt_pre_link))
 
         cmd = Command('htrace', args, cwd=bench_path)
         try:
@@ -558,7 +600,8 @@ def main(args):
         'ini'     : lambda : ini(cfg, opts),
         }
     opts = parse_args(args, actions)
-    cfg  = Config(opts.config, 'htrace.extra.cfg')
+    site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
+    cfg  = Config(site_cfg, opts.config, 'htrace.extra.cfg')
 
     # configure logging
     lvl = logging.INFO
