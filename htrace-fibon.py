@@ -7,6 +7,7 @@ import fnmatch
 import filecmp
 import logging
 import os
+import re
 import subprocess
 import sys
 import shutil
@@ -367,7 +368,9 @@ class MakeTask(Task):
         if os.path.exists(self.benchmark.local_path):
             Log.info('Making %s for %s', self.target, self.benchmark.name)
             try:
-                Command('make', [self.target], cwd=self.benchmark.local_path).run()
+                c = Command('make', [self.target], cwd=self.benchmark.local_path).run()
+                self.stdout = c.stdout
+                self.stderr = c.stderr
             except CommandError as e:
                 self.failed = True
                 self.stdout = e.stdout
@@ -549,6 +552,91 @@ def ini(cfg, opts):
         else:
             ini.write(sys.stdout)
 
+class Trace:
+    def __init__(self, trace_id, num_blocks, num_functions):
+        self.trace_id  = trace_id
+        self.blocks    = num_blocks
+        self.functions = num_functions
+
+class TraceStatsTask(MakeTask):
+    def __init__(self, opts, benchmark):
+        self.benchmark = benchmark
+        self.traces = []
+        self.broken = 'N/A'
+        self.trace_count = 'N/A'
+        super(TraceStatsTask, self).__init__(opts, benchmark, 'view-trace')
+
+    def impl(self):
+        super(TraceStatsTask, self).impl()
+
+        for line in self.stdout:
+            if self.match_broken(line):
+                pass
+            elif self.match_num_traces(line):
+                pass
+            elif self.match_trace(line):
+                pass
+        found = len(self.traces)
+        if(self.trace_count != found):
+           raise HtraceError('Mismatched number of traces. Expected: '
+                             +str(self.trace_count)+'. Found: '+str(found))
+
+    def match_broken(self, line):
+        m = re.match(r'(\d+) Broken traces found', line)
+        if m:
+            self.broken = int(m.group(1))
+        return m
+
+    def match_num_traces(self, line):
+        m = re.match(r'(\d+) Traces found', line)
+        if m:
+            self.trace_count = int(m.group(1))
+        return m
+
+    def match_trace(self, line):
+        m = re.match(
+            r'Trace #(\d+) @(?:[a-zA-Z_0-9])+ \((\d+) Blocks in (\d+) Functions\)',
+            line)
+        if m:
+            trace_id = int(m.group(1))
+            num_blocks = int(m.group(2))
+            num_functions = int(m.group(3))
+            trace = Trace(trace_id, num_blocks, num_functions)
+            Log.debug('Found trace #%d', trace_id)
+            self.traces.append(trace)
+        return m
+
+def get_trace_stats(cfg, opts):
+    benchmarks = cfg.benchmarks
+    tasks =  [TraceStatsTask(opts, b) for b in  benchmarks]
+    run_tasks(opts, tasks)
+    return tasks
+
+
+def trace_summary(cfg, opts):
+    tasks = get_trace_stats(cfg, opts)
+    outh = sys.stdout
+    outh.write("{0:15} {1:6} {2:6}\n".format('benchmark', 'traces', 'broken'))
+    for task in tasks:
+        if not task.failed:
+            outh.write("{0:15} {1:>6} {2:>6}\n".format(
+                task.benchmark.name, len(task.traces), 'FALSE'))
+            outh.write("{0:15} {1:>6} {2:>6}\n".format(
+                task.benchmark.name, task.broken, 'TRUE'))
+
+def trace_details(cfg, opts):
+    tasks = get_trace_stats(cfg, opts)
+    outh  = sys.stdout
+    outh.write("{0:15} {1:>6} {2:>9}\n".format(
+        'benchmark', 'size', 'measure'))
+    for task in tasks:
+        if not task.failed:
+            name = task.benchmark.name
+            for trace in task.traces:
+                outh.write("{0:15} {1:>6} {2:>9}\n".format(
+                    name, trace.blocks, 'Blocks'))
+                outh.write("{0:15} {1:>6} {2:>9}\n".format(
+                    name, trace.functions, 'Functions'))
     
 def parse_args(args, actions):
     parser = argparse.ArgumentParser()
@@ -596,8 +684,10 @@ def main(args):
         'build'   : lambda : build(cfg, opts),
         'run'     : lambda : run(cfg, opts),
         'install' : lambda : install(cfg, opts),
-        'stat'    : lambda : stat(cfg, opts),
+        'status'  : lambda : stat(cfg, opts),
         'ini'     : lambda : ini(cfg, opts),
+        'trace-summary' : lambda : trace_summary(cfg, opts),
+        'trace-details' : lambda : trace_details(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
