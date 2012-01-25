@@ -628,16 +628,16 @@ def trace_summary(cfg, opts):
 def trace_details(cfg, opts):
     tasks = get_trace_stats(cfg, opts)
     outh  = sys.stdout
-    outh.write("{0:15} {1:>6} {2:>9}\n".format(
-        'benchmark', 'size', 'measure'))
+    outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
+        'benchmark', 'trace', 'size', 'measure'))
     for task in tasks:
         if not task.failed:
             name = task.benchmark.name
             for trace in task.traces:
-                outh.write("{0:15} {1:>6} {2:>9}\n".format(
-                    name, trace.blocks, 'Blocks'))
-                outh.write("{0:15} {1:>6} {2:>9}\n".format(
-                    name, trace.functions, 'Functions'))
+                outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
+                    name, trace.trace_id, trace.blocks, 'Blocks'))
+                outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
+                    name, trace.trace_id, trace.functions, 'Functions'))
 
 def stash(cfg, opts):
     """Stashes benchmarks in top level directory to an archive dir"""
