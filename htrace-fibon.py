@@ -5,6 +5,7 @@ import configparser
 import datetime
 import fnmatch
 import filecmp
+import glob
 import logging
 import os
 import re
@@ -448,12 +449,12 @@ class InstallInfo:
 def install(cfg, opts):
     benchmarks = cfg.benchmarks
     if not opts.reuse:
-        raise Exception('must specify a reuse directory for install action')
+        raise UsageError('must specify a reuse directory for install action')
 
     info = InstallInfo(cfg, opts)
     if not os.path.exists(info.path):
         Log.error('install dir %s does not exist', (info.path))
-        raise Exception('install dir %s does not exist' % (info.path))
+        raise HtraceError('install dir %s does not exist' % (info.path))
     
     Log.info('installing to %s to %s', benchmarks, info.path)
 
@@ -637,7 +638,53 @@ def trace_details(cfg, opts):
                     name, trace.blocks, 'Blocks'))
                 outh.write("{0:15} {1:>6} {2:>9}\n".format(
                     name, trace.functions, 'Functions'))
+
+def stash(cfg, opts):
+    """Stashes benchmarks in top level directory to an archive dir"""
+    archive = opts.archive_dir
+    if not archive:
+        raise UsageError("stash requires the -a option for archive dir")
+
+    # Make sure we are not overwriting an archive
+    dirs = glob.glob("*-htrace")
+    for bmdir in dirs:
+        dest = os.path.join(archive, bmdir)
+        if os.path.exists(dest):
+            Log.error("Archive path %s already exists.", dest)
+            raise HtraceError("Archive path exists")
+
+    # Create archive directory if needed
+    if not os.path.exists(archive):
+        os.mkdir(archive)
+
+    # Move benchmarks to archive directory
+    for bmdir in dirs:
+        dest = os.path.join(archive, bmdir)
+        Log.info("Archiving %s to %s", bmdir, dest)
+        shutil.move(bmdir, dest)
+
+def restore(cfg, opts):
+    """Restore an archive to top level directory"""
+    archive = opts.archive_dir
+    if not archive:
+        raise UsageError("stash requires the -a option for archive dir")
+
+    dirs = glob.glob(os.path.join(archive, "*-htrace"))
+    for bmdir in dirs:
+        dest = os.path.basename(bmdir)
+        if os.path.exists(dest):
+            Log.error("Archive restor path already exists %s", dest)
+            raise HtraceError("Archive restore path exists")
+
+    for bmdir in dirs:
+        dest = os.path.basename(bmdir)
+        Log.info("Restoring archive %s to %s", bmdir, dest)
+        shutil.move(bmdir, dest)
+
     
+class UsageError(Exception):
+    pass
+
 def parse_args(args, actions):
     parser = argparse.ArgumentParser()
 
@@ -672,6 +719,9 @@ def parse_args(args, actions):
     parser.add_argument('-j', '--jobs', metavar='N', default=1, type=int,
                         help='Run N tasks in parallel')
 
+    parser.add_argument('-a', '--archive-dir', metavar='DIR',
+                        help="Directory for stash/apply")
+
     # init, build, run
     parser.add_argument('action', choices=sorted(actions.keys()))
     return parser.parse_args()
@@ -688,6 +738,8 @@ def main(args):
         'ini'     : lambda : ini(cfg, opts),
         'trace-summary' : lambda : trace_summary(cfg, opts),
         'trace-details' : lambda : trace_details(cfg, opts),
+        'stash'         : lambda : stash(cfg, opts),
+        'restore'       : lambda : restore(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
@@ -704,7 +756,11 @@ def main(args):
         os.mkdir(opts.logdir)
 
     # perform desired action
-    actions[opts.action]()
+    try:
+        actions[opts.action]()
+    except UsageError as e:
+        print('usage error: '+str(e))
+        sys.exit(1)
 
     
 if __name__ == "__main__":
