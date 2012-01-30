@@ -681,7 +681,17 @@ def restore(cfg, opts):
         Log.info("Restoring archive %s to %s", bmdir, dest)
         shutil.move(bmdir, dest)
 
-    
+def update_static_files(cfg, opts):
+    benchmarks = cfg.benchmarks
+    static_dir = cfg.config["htrace"]["static_files"]
+
+    for benchmark in benchmarks:
+        Log.info("Updating static files for %s", benchmark.name)
+        for f in os.listdir(static_dir):
+            src = os.path.join(static_dir, f)
+            dst = os.path.join(benchmark.local_path, 'bitcode', f)
+            shutil.copyfile(src, dst)
+
 class UsageError(Exception):
     pass
 
@@ -740,6 +750,7 @@ def main(args):
         'trace-details' : lambda : trace_details(cfg, opts),
         'stash'         : lambda : stash(cfg, opts),
         'restore'       : lambda : restore(cfg, opts),
+        'update-static' : lambda : update_static_files(cfg, opts)
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
