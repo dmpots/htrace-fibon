@@ -661,7 +661,10 @@ def stash(cfg, opts):
     for bmdir in dirs:
         dest = os.path.join(archive, bmdir)
         Log.info("Archiving %s to %s", bmdir, dest)
-        shutil.move(bmdir, dest)
+        if opts.copy:
+            shutil.copytree(bmdir, dest)
+        else:
+            shutil.move(bmdir, dest)
 
 def restore(cfg, opts):
     """Restore an archive to top level directory"""
@@ -679,7 +682,10 @@ def restore(cfg, opts):
     for bmdir in dirs:
         dest = os.path.basename(bmdir)
         Log.info("Restoring archive %s to %s", bmdir, dest)
-        shutil.move(bmdir, dest)
+        if opts.copy:
+            shutil.copytree(bmdir, dest)
+        else:
+            shutil.move(bmdir, dest)
 
 def update_static_files(cfg, opts):
     benchmarks = cfg.benchmarks
@@ -731,6 +737,9 @@ def parse_args(args, actions):
 
     parser.add_argument('-a', '--archive-dir', metavar='DIR',
                         help="Directory for stash/apply")
+
+    parser.add_argument('--copy', action='store_true',
+                        help="Copy files instead of moving for stash/restore")
 
     # init, build, run
     parser.add_argument('action', choices=sorted(actions.keys()))
