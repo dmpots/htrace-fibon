@@ -21,10 +21,11 @@ import queue
 Log = logging.getLogger('htrace-fibon')
 
 class Config:
-    def __init__(self, site_cfg, local_cfg, extra_cfg):
+    def __init__(self, site_cfg, run_cfg, fibon_cfg, extra_cfg):
         cfg = Config.getparser()
         cfg.read_file(open(site_cfg))
-        cfg.read_file(open(local_cfg))
+        cfg.read_file(open(run_cfg))
+        cfg.read_file(open(fibon_cfg))
         self.config = cfg
 
         extra = Config.getparser()
@@ -68,19 +69,30 @@ class Config:
             "Xsact",
             ])
 
+        # See what benchmarks we will actually run
+        self.run_benchmarks = self.config['run']['benchmarks'].strip()
+        if self.run_benchmarks == '*':
+            self.run_benchmarks = sorted(list(self.known_benchmarks))
+        else:
+            self.run_benchmarks = sorted(self.run_benchmarks.split())
+
+        exclude_benchmarks = self.config['run']['exclude'].split()
+        for bm in exclude_benchmarks:
+            if bm in self.run_benchmarks:
+                self.run_benchmarks.remove(bm)
+        
     @property
     def benchmarks(self):
         benchmarks = []
-        for sect in self.config.sections():
-            if sect in self.known_benchmarks:
-                sect_d = self.config[sect]
-                benchmarks.append(Benchmark(sect,
-                                            sect_d['configure'],
-                                            sect_d['build'],
-                                            sect_d['run'],
-                                            sect_d['stdin'],
-                                            self.fibon_benchmarks_path,
-                                            self.extra_config,))
+        for benchmark in self.run_benchmarks:
+            sect_d = self.config[benchmark]
+            benchmarks.append(Benchmark(benchmark,
+                                        sect_d['configure'],
+                                        sect_d['build'],
+                                        sect_d['run'],
+                                        sect_d['stdin'],
+                                        self.fibon_benchmarks_path,
+                                        self.extra_config,))
         return benchmarks
 
     @property
@@ -706,7 +718,7 @@ def parse_args(args, actions):
 
     # global options
     parser.add_argument('-c', '--config', metavar='FILE',
-                        default='htrace.fibon.cfg',
+                        default='htrace.run.cfg',
                         help='Read config from FILE')
 
     parser.add_argument('-d', '--debug', default=False, action='store_true')
@@ -763,7 +775,7 @@ def main(args):
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
-    cfg  = Config(site_cfg, opts.config, 'htrace.extra.cfg')
+    cfg  = Config(site_cfg, opts.config, 'htrace.fibon.cfg', 'htrace.extra.cfg')
 
     # configure logging
     lvl = logging.INFO
