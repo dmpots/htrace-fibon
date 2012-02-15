@@ -126,7 +126,7 @@ class Benchmark:
         if self.extra_ll_files:
             self.extra_ll_files = self.extra_ll_files.split()
         extra_opts =  extra_config.get(name, 'extra-opt-pre-link', fallback='')
-        self.extra_opt_pre_link = '-mem2reg ' + extra_opts
+        self.extra_opt_pre_link = '-mem2reg -constprop' + extra_opts
 
         self.fibon_path = None
         for group in os.listdir(fibon_root):
