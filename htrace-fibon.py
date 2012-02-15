@@ -505,7 +505,8 @@ def ini(cfg, opts):
     def remove_unwanted_cabal_opts(cabal_opts):
         def filt(x):
             return not((x.startswith('--with-ghc='))
-                       or x.startswith('--with-ghc-pkg='))
+                       or x.startswith('--with-ghc-pkg=')
+                       or x.startswith('--ghc-option=-fllvm'))
         ok = filter(filt, cabal_opts.split())
         return ' '.join(ok)
 
@@ -561,7 +562,7 @@ def ini(cfg, opts):
 
         # Write ini file to output
         if opts.update_ini:
-            ini.write(open(opts.config, 'w'))
+            ini.write(open('htrace.fibon.cfg', 'w'))
         else:
             ini.write(sys.stdout)
 
