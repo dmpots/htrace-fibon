@@ -711,6 +711,26 @@ def update_static_files(cfg, opts):
             dst = os.path.join(benchmark.local_path, 'bitcode', f)
             shutil.copyfile(src, dst)
 
+class CplibTask(Task):
+    def __init__(self, benchmark, opts):
+        super(CplibTask, self).__init__(opts, 'cplib-'+benchmark.name)
+        self.benchmark = benchmark
+
+    def impl(self):
+        try:
+            Log.info("Copying libs for %s", self.benchmark.name)
+            args = ['cplib.py', '-p', 'all', self.benchmark.name]
+            Command('python3', args).run()
+        except CommandError as e:
+            self.stdout = e.stdout
+            self.stderr = e.stderr
+            raise HtraceError('Failed running cplib.py script')
+
+def cplib(cfg, opts):
+    benchmarks = cfg.benchmarks
+    tasks = [CplibTask(benchmark, opts) for benchmark in benchmarks]
+    run_tasks(opts, tasks)
+
 class UsageError(Exception):
     pass
 
@@ -772,7 +792,8 @@ def main(args):
         'trace-details' : lambda : trace_details(cfg, opts),
         'stash'         : lambda : stash(cfg, opts),
         'restore'       : lambda : restore(cfg, opts),
-        'update-static' : lambda : update_static_files(cfg, opts)
+        'update-static' : lambda : update_static_files(cfg, opts),
+        'cplib'         : lambda : cplib(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
