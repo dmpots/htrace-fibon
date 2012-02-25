@@ -731,6 +731,27 @@ def cplib(cfg, opts):
     tasks = [CplibTask(benchmark, opts) for benchmark in benchmarks]
     run_tasks(opts, tasks)
 
+
+class HtraceMakefileTask(Task):
+    def __init__(self, opts, benchmark):
+        self.benchmark = benchmark
+        super(HtraceMakefileTask, self).__init__(opts,"makefile-"+str(benchmark))
+
+    def impl(self):
+        try:
+            Log.info("Regenerating makefile for %s", self.benchmark.name)
+            args = ['makefile']
+            Command('htrace', args, cwd=self.benchmark.local_path).run()
+        except CommandError as e:
+            self.stdout = e.stdout
+            self.stderr = e.stderr
+            raise HtraceError('Failed running htrace')
+
+def makefile(cfg, opts):
+    benchmarks = cfg.benchmarks
+    tasks = [HtraceMakefileTask(opts, benchmark) for benchmark in benchmarks]
+    run_tasks(opts, tasks)
+
 class UsageError(Exception):
     pass
 
@@ -794,6 +815,7 @@ def main(args):
         'restore'       : lambda : restore(cfg, opts),
         'update-static' : lambda : update_static_files(cfg, opts),
         'cplib'         : lambda : cplib(cfg, opts),
+        'makefile'      : lambda : makefile(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
