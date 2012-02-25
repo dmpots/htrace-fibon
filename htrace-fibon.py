@@ -381,9 +381,11 @@ class MakeTask(Task):
         if os.path.exists(self.benchmark.local_path):
             Log.info('Making %s for %s', self.target, self.benchmark.name)
             try:
-                c = Command('make', [self.target], cwd=self.benchmark.local_path).run()
+                args = [self.target] + self.opts.variables
+                c = Command('make', args, cwd=self.benchmark.local_path).run()
                 self.stdout = c.stdout
                 self.stderr = c.stderr
+
             except CommandError as e:
                 self.failed = True
                 self.stdout = e.stdout
@@ -797,6 +799,9 @@ def parse_args(args, actions):
 
     # init, build, run
     parser.add_argument('action', choices=sorted(actions.keys()))
+    parser.add_argument('variables', metavar='VAR=VALUE',
+                        help='Make variables used for make tasks',
+                        nargs='*')
     return parser.parse_args()
 
 def main(args):
