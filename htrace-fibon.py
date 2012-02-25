@@ -258,27 +258,33 @@ class Task:
     def run(self):
         try:
             self.impl()
+            if self.opts.debug:
+                self.save_output()
         except HtraceError as e:
             Log.error("Failed running task %s: %s", self.name, e.msg)
             self.failed = True
             self.exn    = e
-            now         = str(datetime.datetime.now()) + '\n'
-            logdir      = self.opts.logdir
-
-            if self.stdout:
-                with open(os.path.join(logdir, self.name+'.stdout'), 'w') as f:
-                    f.write(now)
-                    f.write(self.stdout.read())
-            if self.stderr:
-                with open(os.path.join(logdir, self.name+'.stderr'), 'w') as f:
-                    f.write(now)
-                    f.write(self.stderr.read())
-            with open(os.path.join(logdir, self.name+'.exn'), 'w') as f:
-                traceback.print_exc(file=f)
-
+            self.save_output()
             if self.opts.stop_on_error:
                 raise
 
+    def save_output(self):
+        now         = str(datetime.datetime.now()) + '\n'
+        logdir      = self.opts.logdir
+
+        if self.stdout:
+            with open(os.path.join(logdir, self.name+'.stdout'), 'w') as f:
+                f.write(now)
+                f.write(self.stdout.read())
+        if self.stderr:
+            with open(os.path.join(logdir, self.name+'.stderr'), 'w') as f:
+                f.write(now)
+                f.write(self.stderr.read())
+        if self.exn:
+            with open(os.path.join(logdir, self.name+'.exn'), 'w') as f:
+                traceback.print_exc(file=f)
+
+        
     def impl(self):
         pass
 
