@@ -575,10 +575,19 @@ def ini(cfg, opts):
             ini.write(sys.stdout)
 
 class Trace:
-    def __init__(self, trace_id, num_blocks, num_functions):
+    def __init__(self, trace_id, num_blocks, num_functions, entry_percent):
         self.trace_id  = trace_id
         self.blocks    = num_blocks
         self.functions = num_functions
+        self.exits     = []
+        self.entry_percent = entry_percent / 100
+
+    def add_block(self, name, exit_percent):
+        self.exits.append(exit_percent / 100)
+
+    @property
+    def completion_percent(self):
+        return self.exits[-1]
 
 class TraceStatsTask(MakeTask):
     def __init__(self, opts, benchmark):
@@ -598,10 +607,22 @@ class TraceStatsTask(MakeTask):
                 pass
             elif self.match_trace(line):
                 pass
+            elif self.match_block(line):
+                pass
+
+        # Saninty Checks
         found = len(self.traces)
         if(self.trace_count != found):
            raise HtraceError('Mismatched number of traces. Expected: '
                              +str(self.trace_count)+'. Found: '+str(found))
+        for trace in self.traces:
+            blocks   = trace.blocks
+            exits    = len(trace.exits)
+            if blocks != exits:
+                trace_id = trace.trace_id
+                err  = "Mismatched number of blocks in trace {!s}.".format(trace_id)
+                err += "Expected {!s}, found {!s}".format(blocks, exits)
+                raise HtraceError(err)
 
     def match_broken(self, line):
         m = re.match(r'(\d+) Broken traces found', line)
@@ -617,16 +638,26 @@ class TraceStatsTask(MakeTask):
 
     def match_trace(self, line):
         m = re.match(
-            r'Trace #(\d+) @(?:[a-zA-Z_0-9])+ \((\d+) Blocks in (\d+) Functions\)',
+            r'Trace #(\d+) @(?:[a-zA-Z_0-9])+ \((\d+) Blocks in (\d+) Functions\)\s+(\d+[.]\d+)',
             line)
         if m:
             trace_id = int(m.group(1))
             num_blocks = int(m.group(2))
             num_functions = int(m.group(3))
-            trace = Trace(trace_id, num_blocks, num_functions)
+            entry_percent = float(m.group(4))
+            trace = Trace(trace_id, num_blocks, num_functions, entry_percent)
             Log.debug('Found trace #%d', trace_id)
             self.traces.append(trace)
+            self.current_trace = trace
         return m
+
+    def match_block(self, line):
+        m = re.match(r'\s+([a-zA-Z0-9]+)\s+(\d+[.]\d+)', line)
+        if m:
+            block_name = m.group(1)
+            exit_percent = float(m.group(2))
+            Log.debug("Adding block %s - %f", block_name, exit_percent)
+            self.current_trace.add_block(block_name, exit_percent)
 
 def get_trace_stats(cfg, opts):
     benchmarks = cfg.benchmarks
@@ -638,27 +669,60 @@ def get_trace_stats(cfg, opts):
 def trace_summary(cfg, opts):
     tasks = get_trace_stats(cfg, opts)
     outh = sys.stdout
-    outh.write("{0:15} {1:6} {2:6}\n".format('benchmark', 'traces', 'broken'))
+    outh.write("{:15} {:6} {:6} {:>12} {:>12}\n".format(
+        'Benchmark', 'Traces', 'Broken', 'Completion', 'WCompletion'))
     for task in tasks:
+        # compute average completion percent
         if not task.failed:
-            outh.write("{0:15} {1:>6} {2:>6}\n".format(
-                task.benchmark.name, len(task.traces), 'FALSE'))
-            outh.write("{0:15} {1:>6} {2:>6}\n".format(
-                task.benchmark.name, task.broken, 'TRUE'))
+            weighted_avg = 0
+            avg          = 0
+            for trace in task.traces:
+                weighted_avg += trace.entry_percent * trace.completion_percent
+                avg += trace.completion_percent
+            if len(task.traces) > 0:
+                avg  /= len(task.traces)
+            outh.write("{:15} {:>6} {:>6} {:>12.5f} {:>12.5f}\n".format(
+                task.benchmark.name, len(task.traces), 'FALSE',
+                avg, weighted_avg))
+            outh.write("{:15} {:>6} {:>6} {:>12.5f} {:>12.5f}\n".format(
+                task.benchmark.name, task.broken, 'TRUE', 0.0, 0.0))
 
 def trace_details(cfg, opts):
     tasks = get_trace_stats(cfg, opts)
     outh  = sys.stdout
-    outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
-        'benchmark', 'trace', 'size', 'measure'))
+    outh.write("{:15} {:>6} {:>6} {:>9} {:>8} {:>8}\n".format(
+        'Benchmark', 'Trace', 'Size', 'Measure', 'Execution', 'Completion'))
     for task in tasks:
         if not task.failed:
             name = task.benchmark.name
             for trace in task.traces:
-                outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
-                    name, trace.trace_id, trace.blocks, 'Blocks'))
-                outh.write("{0:15} {1:>6} {2:>6} {3:>9}\n".format(
-                    name, trace.trace_id, trace.functions, 'Functions'))
+                outh.write("{:15} {:>6} {:>6} {:>9} {:>8.5f} {:>8.5f}\n".format(
+                    name, trace.trace_id, trace.blocks, 'Blocks',
+                    trace.entry_percent, trace.completion_percent))
+                outh.write("{:15} {:>6} {:>6} {:>9} {:>8.5f} {:>8.5f}\n".format(
+                    name, trace.trace_id, trace.functions, 'Functions',
+                    trace.entry_percent, trace.completion_percent))
+
+def save_traces(cfg, opts):
+    archive = opts.archive_dir
+    suffix  = opts.suffix
+    tracef  = 'view-trace.txt'
+    if not archive:
+        raise UsageError("save-traces requires the -a option for archive dir")
+    if not suffix:
+        raise UsageError("save-traces requires the -suffix option for file suffix")
+    
+    tasks = get_trace_stats(cfg, opts)
+    for task in tasks:
+        if not task.failed:
+            src = os.path.join(task.benchmark.local_path, tracef)
+            dstf = '.'.join([task.benchmark.name, tracef, suffix])
+            dst = os.path.join(archive, dstf)
+            Log.debug('copying %s to %s', src, dst)
+            if os.path.exists(dst):
+                raise HtraceError("Destination path {} exists".format(dst))
+            shutil.copyfile(src, dst)
+    
 
 def stash(cfg, opts):
     """Stashes benchmarks in top level directory to an archive dir"""
@@ -803,6 +867,8 @@ def parse_args(args, actions):
     parser.add_argument('--copy', action='store_true',
                         help="Copy files instead of moving for stash/restore")
 
+    parser.add_argument('--suffix', metavar="SUFFIX",
+                        help="Suffix to use when copying trace files")
     # init, build, run
     parser.add_argument('action', choices=sorted(actions.keys()))
     parser.add_argument('variables', metavar='VAR=VALUE',
@@ -827,6 +893,7 @@ def main(args):
         'update-static' : lambda : update_static_files(cfg, opts),
         'cplib'         : lambda : cplib(cfg, opts),
         'makefile'      : lambda : makefile(cfg, opts),
+        'save-traces'   : lambda : save_traces(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
