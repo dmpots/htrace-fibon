@@ -652,10 +652,13 @@ class TraceStatsTask(MakeTask):
         return m
 
     def match_block(self, line):
-        m = re.match(r'\s+([a-zA-Z0-9]+)\s+(\d+[.]\d+)', line)
+        m = re.match(r'\s+([a-zA-Z0-9]+)\s+(\d+[.]\d+|nan)', line)
         if m:
             block_name = m.group(1)
-            exit_percent = float(m.group(2))
+            percent = m.group(2)
+            if percent == "nan":
+                percent = 0.0
+            exit_percent = float(percent)
             Log.debug("Adding block %s - %f", block_name, exit_percent)
             self.current_trace.add_block(block_name, exit_percent)
 
