@@ -439,7 +439,7 @@ class InstallInfo:
         self.reuse = opts.reuse
 
         if self.reuse == None:
-            raise HtraceError('InstallInfo must have reuse directory')
+            raise UsageError('InstallInfo must have reuse directory')
 
         self.dirs  = os.listdir(self.path)
 

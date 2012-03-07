@@ -2,3 +2,4 @@ log/
 _T*
 *-htrace/
 .DS_Store
+results/
