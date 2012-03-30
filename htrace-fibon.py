@@ -219,10 +219,13 @@ class Command:
         Log.debug("%s %s", self.exe, " ".join(self.args))
         stdoutf = tempfile.TemporaryFile('w+t')
         stderrf = tempfile.TemporaryFile('w+t')
+        start = time.time()
         ret = subprocess.call([self.exe] + self.args,
                               stdout=stdoutf,
                               stderr=stderrf,
                               **self.popen_args)
+        end = time.time()
+        self.time = end - start
         stdoutf.seek(0)
         stderrf.seek(0)
 
@@ -827,6 +830,29 @@ def makefile(cfg, opts):
     tasks = [HtraceMakefileTask(opts, benchmark) for benchmark in benchmarks]
     run_tasks(opts, tasks)
 
+def time_prof(cfg, opts):
+    benchmarks = cfg.benchmarks
+    times = []
+    for benchmark in benchmarks:
+        Log.info("Timing prof for %s", benchmark.name)
+        cmd = Command('make', ['trace'], cwd=benchmark.local_path)
+        cmd.run()
+        times.append((benchmark.name, cmd.time))
+
+    print("{:20} {}".format("Benchmark", "Profile"))
+    for (b,t) in times:
+        print("{:20} {:.2f}".format(b, t))
+
+def size(cfg, opts):
+    benchmarks = cfg.benchmarks
+    tasks = []
+    for benchmark in benchmarks:
+        target = "build/" + benchmark.name + ".linked.traced.bc"
+        if(os.path.exists(benchmark.local_path)):
+           tasks.append(MakeTask(opts, benchmark, target))
+    run_tasks(opts, tasks)
+
+   
 class UsageError(Exception):
     pass
 
@@ -897,6 +923,8 @@ def main(args):
         'cplib'         : lambda : cplib(cfg, opts),
         'makefile'      : lambda : makefile(cfg, opts),
         'save-traces'   : lambda : save_traces(cfg, opts),
+        'time-prof'     : lambda : time_prof(cfg, opts),
+        'size'          : lambda : size(cfg, opts),
         }
     opts = parse_args(args, actions)
     site_cfg = os.path.join(os.environ['HOME'], 'local', 'bin', 'htrace.site.cfg')
